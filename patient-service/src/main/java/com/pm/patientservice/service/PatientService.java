@@ -1,5 +1,6 @@
 package com.pm.patientservice.service;
 
+import com.pm.patientservice.dto.NotificationMessageDTO;
 import com.pm.patientservice.dto.PatientRequestTO;
 import com.pm.patientservice.dto.PatientResponseDTO;
 import com.pm.patientservice.exception.EmailAlreadyExistsException;
@@ -16,13 +17,30 @@ import java.util.UUID;
 @Service
 public class PatientService {
     private final PatientRepository patientRepository;
+    private final NotificationService notificationService;
 
-    public PatientService(PatientRepository patientRepository) {
+    public PatientService(PatientRepository patientRepository, NotificationService notificationService) {
         this.patientRepository = patientRepository;
+        this.notificationService = notificationService;
     }
 
     public List<PatientResponseDTO> getPatients() {
         List<Patient> patients = patientRepository.findAll();
+        patients.forEach(patient -> {
+            try {
+                NotificationMessageDTO notificationMessage = new NotificationMessageDTO(
+                        patient.getId(),
+                        patient.getName(),
+                        patient.getEmail(),
+                        "PATIENT_FETCHED"
+                );
+                notificationService.sendPatientCreatedNotification(notificationMessage);
+            } catch (Exception e) {
+                // Log error but don't fail the patient retrieval
+                System.out.println("Failed to send notification for patient: " + patient.getId());
+            }
+        });
+
         return patients.stream().
                 map(PatientMapper::toDTO).toList();
     }
@@ -37,6 +55,18 @@ public class PatientService {
             throw new EmailAlreadyExistsException("A patient with this email" + "already exists " + patientRequestTO.getEmail());
         }
         Patient patient = patientRepository.save(PatientMapper.toModel(patientRequestTO));
+        try {
+            NotificationMessageDTO notificationMessage = new NotificationMessageDTO(
+                    patient.getId(),
+                    patient.getName(),
+                    patient.getEmail(),
+                    "PATIENT_CREATED"
+            );
+            notificationService.sendPatientCreatedNotification(notificationMessage);
+        } catch (Exception e) {
+            // Log error but don't fail the patient creation
+            System.out.println("Failed to send notification for patient: " + patientRequestTO.getEmail());
+        }
         return PatientMapper.toDTO(patient);
     }
 
